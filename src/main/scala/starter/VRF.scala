@@ -3,20 +3,14 @@ package starter
 import com.bloxbean.cardano.client.plutus.spec.PlutusV3Script
 import scalus.*
 import scalus.Compiler.compile
-import scalus.builtin.Builtins.{
-    blake2b_224,
-    bls12_381_G1_hashToGroup,
-    bls12_381_finalVerify,
-    bls12_381_millerLoop,
-    serialiseData
-}
-
+import scalus.builtin.Builtins.*
 import scalus.builtin.Data.{FromData, ToData}
 import scalus.builtin.ToData.toData
 import scalus.builtin.{ByteString, Data, FromData, ToData}
 import scalus.ledger.api.v3.ScriptPurpose.*
 import scalus.ledger.api.v3.{TxInfo, TxOutRef}
 import scalus.prelude.*
+import scalus.prelude.crypto.bls12_381.G1.compress
 import scalus.prelude.crypto.bls12_381.{G1, G2}
 import scalus.sir.SIR
 import scalus.uplc.Program
@@ -55,12 +49,15 @@ object VRF extends Validator:
             |> serialiseData
         val ownInputG1 = bls12_381_G1_hashToGroup(ownInputBs, ByteString.fromString("VRF"))
 
-        val signature = redeemer.to[VrfRedeemer].vrfSignature |> G1.uncompress
+        val vrfRedeemer = redeemer.to[VrfRedeemer]
+        val signature = vrfRedeemer.vrfSignature |> G1.uncompress
         // Check the signature e(\signature, g_{2}) = e(H(m), g_{2}^{x}).
         val lhs = bls12_381_millerLoop(signature, G2.generator)
         val rhs = bls12_381_millerLoop(ownInputG1, vrfPubKey)
         val signatureIsValid = bls12_381_finalVerify(lhs, rhs)
 
+        require(vrfRedeemer.vrfOutput == blake2b_224(signature.compress))
+        
         // Check vrfOutput satisfies some condition, i.e.
         // vrfOutput <= threshold
         // or something to that effect.
